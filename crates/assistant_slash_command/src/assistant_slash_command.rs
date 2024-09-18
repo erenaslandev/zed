@@ -1,8 +1,10 @@
 mod slash_command_registry;
 
 use anyhow::Result;
+use futures::stream::BoxStream;
 use gpui::{AnyElement, AppContext, ElementId, SharedString, Task, WeakView, WindowContext};
 use language::{BufferSnapshot, CodeLabel, LspAdapterDelegate, OffsetRangeExt};
+use language_model::Role;
 use serde::{Deserialize, Serialize};
 pub use slash_command_registry::*;
 use std::{
@@ -56,6 +58,8 @@ pub struct ArgumentCompletion {
     pub replace_previous_arguments: bool,
 }
 
+pub type SlashCommandResult = BoxStream<'static, Result<SlashCommandEvent>>;
+
 pub trait SlashCommand: 'static + Send + Sync {
     fn name(&self) -> String;
     fn label(&self, _cx: &AppContext) -> CodeLabel {
@@ -87,7 +91,7 @@ pub trait SlashCommand: 'static + Send + Sync {
         // perhaps another kind of delegate is needed here.
         delegate: Option<Arc<dyn LspAdapterDelegate>>,
         cx: &mut WindowContext,
-    ) -> Task<BoxStream<Result<SlashCommandEvent>>>;
+    ) -> Task<SlashCommandResult>;
 }
 
 pub type RenderFoldPlaceholder = Arc<
@@ -112,6 +116,7 @@ pub enum SlashCommandEvent {
         message: String,
         complete: f32,
     },
+    EndMessage,
     EndSection {
         metadata: Option<serde_json::Value>,
     },

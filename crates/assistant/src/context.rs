@@ -7,7 +7,7 @@ use crate::{
 };
 use anyhow::{anyhow, Context as _, Result};
 use assistant_slash_command::{
-    SlashCommandOutput, SlashCommandOutputSection, SlashCommandRegistry,
+    SlashCommandOutput, SlashCommandOutputSection, SlashCommandRegistry, SlashCommandResult,
 };
 use assistant_tool::ToolRegistry;
 use client::{self, proto, telemetry::Telemetry};
@@ -1780,119 +1780,186 @@ impl Context {
     pub fn insert_command_output(
         &mut self,
         command_range: Range<language::Anchor>,
-        output: Task<Result<SlashCommandOutput>>,
+        output: Task<SlashCommandResult>,
         ensure_trailing_newline: bool,
         expand_result: bool,
         cx: &mut ModelContext<Self>,
-    ) {
+    ) -> Option<()> {
         self.reparse(cx);
+
 
         let insert_output_task = cx.spawn(|this, mut cx| {
             let command_range = command_range.clone();
             async move {
                 let output = output.await?;
 
-                let pending_section_start;
-                let pending_section_end;
+                struct PendingSection {
+                    start: language::Anchor,
+                    end: language::Anchor,
+                }
+
+                struct PendingMessage {
+                    anchor: MessageAnchor,
+                    insert_offset: usize
+                }
+
+                let mut pending_section: Option<PendingSection> = None;
+                let mut pending_message: Option<PendingMessage> = None;
+
                 while let Some(event) = output.next().await {
                     match event {
-                        StartMessage => {
-                            this.update(cx, |this, cx| this.insert_message(.., new_metadata, cx));
+                        StartMessage { role } => {
+                            this.update(&mut cx, |this, cx| {
+                                let last_message_id = self.get_last_valid_message_id(cx)?;
+                                let message_anchor = self.insert_message_after(last_message_id, role, MessageStatus::Pending, cx)?;
+                                pending_message = Some(PendingMessage { anchor: message_anchor, insert_offset: 0 });
+                            })?;
                         }
-                        StartSection => {
-                            pending_section_start = self.buffer.read(cx).anchor_before(len);
-                            pending_section_end = self.buffer.read(cx).anchor_after(len);
+                        StartSection {
+                            icon,
+                            label,
+                            metadata,
+                        } => {
+                            if pending_section.is_none() {
+                                pending_section = Some(PendingSection {
+                                    start: self.buffer.read(cx).anchor_before(len),
+                                    end: self.buffer.read(cx).anchor_before(len),
+                                });
+                            }
+                        }
+                        Content { text } => {
+                            if let Some(mut current_message) = pending_message {
+                                this.update(&mut cx, |this, cx| {
+                                    this.buffer.update(cx, |buffer, cx| {
+                                        // let start = command_range.start.to_offset(buffer);
+                                        // let old_end = command_range.end.to_offset(buffer);
+                                        // We want to start editing the buffer at the end of thecurrent command_range,
+                                        // and not replace the command range for now. (we will do this again later), since
+                                        // we are still showing the command label.
+                                        let command_end = command_range.end.to_offset(buffer);
+                                        let start = command_end + current_message.insert_offset;
+                                        let end = start + text.len();
+                                        buffer.edit([(start..end, text)], None, cx);
+                                        current_message.insert_offset += text.len();
+                                    });
+                                });
+                            }
+                            todo!()
+                        },
+                        Progress { message, complete } => {
+                            todo!()
+                        },
+                        EndMessage => {
+                            pending_message = None;
+                        }
+                        EndSection { metadata } => {
+                            this.update(&mut cx, |this, cx| {
+                                this.buffer.update(cx, |buffer, cx| {
+                                    let start = command_range.start.to_offset(buffer);
+                                    let old_end = command_range.end.to_offset(buffer);
+                                    let new_end = start + output.text.len();
+                                    buffer.edit([(start..old_end, output.text)], None, cx);
+
+                                    // SlashCommandOutputSection {
+                                    //     range: buffer.anchor
+                                    // }
+                                });
+                            });
+                            pending_section = None;
                         }
                     }
                 }
-                this.update(&mut cx, |this, cx| match output {
-                    Ok(mut output) => {
-                        // Ensure section ranges are valid.
-                        for section in &mut output.sections {
-                            section.range.start = section.range.start.min(output.text.len());
-                            section.range.end = section.range.end.min(output.text.len());
-                            while !output.text.is_char_boundary(section.range.start) {
-                                section.range.start -= 1;
-                            }
-                            while !output.text.is_char_boundary(section.range.end) {
-                                section.range.end += 1;
-                            }
-                        }
 
-                        // Ensure there is a newline after the last section.
-                        if ensure_trailing_newline {
-                            let has_newline_after_last_section =
-                                output.sections.last().map_or(false, |last_section| {
-                                    output.text[last_section.range.end..].ends_with('\n')
-                                });
-                            if !has_newline_after_last_section {
-                                output.text.push('\n');
-                            }
-                        }
+                assert!(pending_section == None);
 
-                        let version = this.version.clone();
-                        let command_id = SlashCommandId(this.next_timestamp());
-                        let (operation, event) = this.buffer.update(cx, |buffer, cx| {
-                            let start = command_range.start.to_offset(buffer);
-                            let old_end = command_range.end.to_offset(buffer);
-                            let new_end = start + output.text.len();
-                            buffer.edit([(start..old_end, output.text)], None, cx);
+                // this.update(&mut cx, |this, cx| match output {
+                //     Ok(mut output) => {
+                //         // Ensure section ranges are valid.
+                //         for section in &mut output.sections {
+                //             section.range.start = section.range.start.min(output.text.len());
+                //             section.range.end = section.range.end.min(output.text.len());
+                //             while !output.text.is_char_boundary(section.range.start) {
+                //                 section.range.start -= 1;
+                //             }
+                //             while !output.text.is_char_boundary(section.range.end) {
+                //                 section.range.end += 1;
+                //             }
+                //         }
 
-                            let mut sections = output
-                                .sections
-                                .into_iter()
-                                .map(|section| SlashCommandOutputSection {
-                                    range: buffer.anchor_after(start + section.range.start)
-                                        ..buffer.anchor_before(start + section.range.end),
-                                    icon: section.icon,
-                                    label: section.label,
-                                    metadata: section.metadata,
-                                })
-                                .collect::<Vec<_>>();
-                            sections.sort_by(|a, b| a.range.cmp(&b.range, buffer));
+                //         // Ensure there is a newline after the last section.
+                //         if ensure_trailing_newline {
+                //             let has_newline_after_last_section =
+                //                 output.sections.last().map_or(false, |last_section| {
+                //                     output.text[last_section.range.end..].ends_with('\n')
+                //                 });
+                //             if !has_newline_after_last_section {
+                //                 output.text.push('\n');
+                //             }
+                //         }
 
-                            this.slash_command_output_sections
-                                .extend(sections.iter().cloned());
-                            this.slash_command_output_sections
-                                .sort_by(|a, b| a.range.cmp(&b.range, buffer));
+                //         let version = this.version.clone();
+                //         let command_id = SlashCommandId(this.next_timestamp());
+                //         let (operation, event) = this.buffer.update(cx, |buffer, cx| {
+                //             let start = command_range.start.to_offset(buffer);
+                //             let old_end = command_range.end.to_offset(buffer);
+                //             let new_end = start + output.text.len();
+                //             buffer.edit([(start..old_end, output.text)], None, cx);
 
-                            let output_range =
-                                buffer.anchor_after(start)..buffer.anchor_before(new_end);
-                            this.finished_slash_commands.insert(command_id);
+                //             let mut sections = output
+                //                 .sections
+                //                 .into_iter()
+                //                 .map(|section| SlashCommandOutputSection {
+                //                     range: buffer.anchor_after(start + section.range.start)
+                //                         ..buffer.anchor_before(start + section.range.end),
+                //                     icon: section.icon,
+                //                     label: section.label,
+                //                     metadata: section.metadata,
+                //                 })
+                //                 .collect::<Vec<_>>();
+                //             sections.sort_by(|a, b| a.range.cmp(&b.range, buffer));
 
-                            (
-                                ContextOperation::SlashCommandFinished {
-                                    id: command_id,
-                                    output_range: output_range.clone(),
-                                    sections: sections.clone(),
-                                    version,
-                                },
-                                ContextEvent::SlashCommandFinished {
-                                    output_range,
-                                    sections,
-                                    run_commands_in_output: output.run_commands_in_text,
-                                    expand_result,
-                                },
-                            )
-                        });
+                //             this.slash_command_output_sections
+                //                 .extend(sections.iter().cloned());
+                //             this.slash_command_output_sections
+                //                 .sort_by(|a, b| a.range.cmp(&b.range, buffer));
 
-                        this.push_op(operation, cx);
-                        cx.emit(event);
-                    }
-                    Err(error) => {
-                        if let Some(pending_command) =
-                            this.pending_command_for_position(command_range.start, cx)
-                        {
-                            pending_command.status =
-                                PendingSlashCommandStatus::Error(error.to_string());
-                            cx.emit(ContextEvent::PendingSlashCommandsUpdated {
-                                removed: vec![pending_command.source_range.clone()],
-                                updated: vec![pending_command.clone()],
-                            });
-                        }
-                    }
-                })
-                .ok();
+                //             let output_range =
+                //                 buffer.anchor_after(start)..buffer.anchor_before(new_end);
+                //             this.finished_slash_commands.insert(command_id);
+
+                //             (
+                //                 ContextOperation::SlashCommandFinished {
+                //                     id: command_id,
+                //                     output_range: output_range.clone(),
+                //                     sections: sections.clone(),
+                //                     version,
+                //                 },
+                //                 ContextEvent::SlashCommandFinished {
+                //                     output_range,
+                //                     sections,
+                //                     run_commands_in_output: output.run_commands_in_text,
+                //                     expand_result,
+                //                 },
+                //             )
+                //         });
+
+                //         this.push_op(operation, cx);
+                //         cx.emit(event);
+                //     }
+                //     Err(error) => {
+                //         if let Some(pending_command) =
+                //             this.pending_command_for_position(command_range.start, cx)
+                //         {
+                //             pending_command.status =
+                //                 PendingSlashCommandStatus::Error(error.to_string());
+                //             cx.emit(ContextEvent::PendingSlashCommandsUpdated {
+                //                 removed: vec![pending_command.source_range.clone()],
+                //                 updated: vec![pending_command.clone()],
+                //             });
+                //         }
+                //     }
+                // // })
+                // .ok()
             }
         });
 
@@ -1905,7 +1972,7 @@ impl Context {
                 updated: vec![pending_command.clone()],
             });
         }
-    }
+    })
 
     pub fn insert_tool_output(
         &mut self,
