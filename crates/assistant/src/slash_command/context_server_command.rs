@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use assistant_slash_command::{
-    AfterCompletion, ArgumentCompletion, SlashCommand, SlashCommandOutput,
-    SlashCommandOutputSection,
+    AfterCompletion, ArgumentCompletion, SlashCommand, SlashCommandOutputSection,
+    SlashCommandResult,
 };
 use collections::HashMap;
 use context_servers::{
@@ -111,7 +111,7 @@ impl SlashCommand for ContextServerSlashCommand {
         _workspace: WeakView<Workspace>,
         _delegate: Option<Arc<dyn LspAdapterDelegate>>,
         cx: &mut WindowContext,
-    ) -> Task<Result<SlashCommandOutput>> {
+    ) -> Task<SlashCommandResult> {
         let server_id = self.server_id.clone();
         let prompt_name = self.prompt.name.clone();
 
@@ -133,20 +133,39 @@ impl SlashCommand for ContextServerSlashCommand {
                 // We must normalize the line endings here, since servers might return CR characters.
                 LineEnding::normalize(&mut prompt);
 
-                Ok(SlashCommandOutput {
-                    sections: vec![SlashCommandOutputSection {
-                        range: 0..(prompt.len()),
-                        icon: IconName::ZedAssistant,
-                        label: SharedString::from(
-                            result
-                                .description
-                                .unwrap_or(format!("Result from {}", prompt_name)),
-                        ),
-                        metadata: None,
-                    }],
-                    text: prompt,
-                    run_commands_in_text: false,
-                })
+                let events = vec![
+                    Ok(SlashCommandEvent::StartMessage {
+                        role: Role::Assistant,
+                    }),
+                    Ok(SlashCommandEvent::Content {
+                        text: "Hello, world!".to_string(),
+                    }),
+                    Ok(SlashCommandEvent::EndMessage),
+                    Ok(SlashCommandEvent::StartMessage { role: Role::User }),
+                    Ok(SlashCommandEvent::Content {
+                        text: "Hello, world!".to_string(),
+                    }),
+                    Ok(SlashCommandEvent::EndMessage),
+                ];
+
+                // Convert the vector into a stream
+                let stream = stream::iter(events);
+                Ok(stream)
+
+                // Ok(SlashCommandOutput {
+                //     sections: vec![SlashCommandOutputSection {
+                //         range: 0..(prompt.len()),
+                //         icon: IconName::ZedAssistant,
+                //         label: SharedString::from(
+                //             result
+                //                 .description
+                //                 .unwrap_or(format!("Result from {}", prompt_name)),
+                //         ),
+                //         metadata: None,
+                //     }],
+                //     text: prompt,
+                //     run_commands_in_text: false,
+                // })
             })
         } else {
             Task::ready(Err(anyhow!("Context server not found")))

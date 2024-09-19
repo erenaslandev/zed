@@ -4,10 +4,11 @@ use crate::{
     prompt_library::open_prompt_library,
     prompts::PromptBuilder,
     slash_command::{
-        default_command::DefaultSlashCommand,
-        docs_command::{DocsSlashCommand, DocsSlashCommandArgs},
-        file_command::{self, codeblock_fence_for_path},
-        SlashCommandCompletionProvider, SlashCommandRegistry,
+        // default_command::DefaultSlashCommand,
+        // docs_command::{DocsSlashCommand, DocsSlashCommandArgs},
+        // file_command::{self, codeblock_fence_for_path},
+        SlashCommandCompletionProvider,
+        SlashCommandRegistry,
     },
     slash_command_picker,
     terminal_inline_assistant::TerminalInlineAssistant,
@@ -1594,23 +1595,23 @@ impl ContextEditor {
     }
 
     fn insert_default_prompt(&mut self, cx: &mut ViewContext<Self>) {
-        let command_name = DefaultSlashCommand.name();
-        self.editor.update(cx, |editor, cx| {
-            editor.insert(&format!("/{command_name}\n\n"), cx)
-        });
-        let command = self.context.update(cx, |context, cx| {
-            context.reparse(cx);
-            context.pending_slash_commands()[0].clone()
-        });
-        self.run_command(
-            command.source_range,
-            &command.name,
-            &command.arguments,
-            false,
-            false,
-            self.workspace.clone(),
-            cx,
-        );
+        // let command_name = DefaultSlashCommand.name();
+        // self.editor.update(cx, |editor, cx| {
+        //     editor.insert(&format!("/{command_name}\n\n"), cx)
+        // });
+        // let command = self.context.update(cx, |context, cx| {
+        //     context.reparse(cx);
+        //     context.pending_slash_commands()[0].clone()
+        // });
+        // self.run_command(
+        //     command.source_range,
+        //     &command.name,
+        //     &command.arguments,
+        //     false,
+        //     false,
+        //     self.workspace.clone(),
+        //     cx,
+        // );
     }
 
     fn assist(&mut self, _: &Assist, cx: &mut ViewContext<Self>) {
@@ -2120,13 +2121,13 @@ impl ContextEditor {
                                     // TODO: In the future we should investigate how we can expose
                                     // this as a hook on the `SlashCommand` trait so that we don't
                                     // need to special-case it here.
-                                    if command.name == DocsSlashCommand::NAME {
-                                        return render_docs_slash_command_trailer(
-                                            row,
-                                            command.clone(),
-                                            cx,
-                                        );
-                                    }
+                                    // if command.name == DocsSlashCommand::NAME {
+                                    //     return render_docs_slash_command_trailer(
+                                    //         row,
+                                    //         command.clone(),
+                                    //         cx,
+                                    //     );
+                                    // }
 
                                     Empty.into_any()
                                 }
@@ -3280,20 +3281,20 @@ impl ContextEditor {
                     let line_comment_prefix = start_language
                         .and_then(|l| l.default_scope().line_comment_prefixes().first().cloned());
 
-                    let fence = codeblock_fence_for_path(
-                        filename.as_deref(),
-                        Some(selection.start.row..=selection.end.row),
-                    );
+                    // let fence = codeblock_fence_for_path(
+                    //     filename.as_deref(),
+                    //     Some(selection.start.row..=selection.end.row),
+                    // );
 
-                    if let Some((line_comment_prefix, outline_text)) =
-                        line_comment_prefix.zip(outline_text)
-                    {
-                        let breadcrumb =
-                            format!("{line_comment_prefix}Excerpt from: {outline_text}\n");
-                        format!("{fence}{breadcrumb}{selected_text}\n```")
-                    } else {
-                        format!("{fence}{selected_text}\n```")
-                    }
+                    // if let Some((line_comment_prefix, outline_text)) =
+                    //     line_comment_prefix.zip(outline_text)
+                    // {
+                    //     let breadcrumb =
+                    //         format!("{line_comment_prefix}Excerpt from: {outline_text}\n");
+                    //     format!("{fence}{breadcrumb}{selected_text}\n```")
+                    // } else {
+                    //     format!("{fence}{selected_text}\n```")
+                    // }
                 };
                 let crease_title = if let Some(path) = filename {
                     let start_line = selection.start.row + 1;
@@ -5311,69 +5312,69 @@ fn render_pending_slash_command_gutter_decoration(
     icon.into_any_element()
 }
 
-fn render_docs_slash_command_trailer(
-    row: MultiBufferRow,
-    command: PendingSlashCommand,
-    cx: &mut WindowContext,
-) -> AnyElement {
-    if command.arguments.is_empty() {
-        return Empty.into_any();
-    }
-    let args = DocsSlashCommandArgs::parse(&command.arguments);
+// fn render_docs_slash_command_trailer(
+//     row: MultiBufferRow,
+//     command: PendingSlashCommand,
+//     cx: &mut WindowContext,
+// ) -> AnyElement {
+//     if command.arguments.is_empty() {
+//         return Empty.into_any();
+//     }
+//     let args = DocsSlashCommandArgs::parse(&command.arguments);
 
-    let Some(store) = args
-        .provider()
-        .and_then(|provider| IndexedDocsStore::try_global(provider, cx).ok())
-    else {
-        return Empty.into_any();
-    };
+//     let Some(store) = args
+//         .provider()
+//         .and_then(|provider| IndexedDocsStore::try_global(provider, cx).ok())
+//     else {
+//         return Empty.into_any();
+//     };
 
-    let Some(package) = args.package() else {
-        return Empty.into_any();
-    };
+//     let Some(package) = args.package() else {
+//         return Empty.into_any();
+//     };
 
-    let mut children = Vec::new();
+//     let mut children = Vec::new();
 
-    if store.is_indexing(&package) {
-        children.push(
-            div()
-                .id(("crates-being-indexed", row.0))
-                .child(Icon::new(IconName::ArrowCircle).with_animation(
-                    "arrow-circle",
-                    Animation::new(Duration::from_secs(4)).repeat(),
-                    |icon, delta| icon.transform(Transformation::rotate(percentage(delta))),
-                ))
-                .tooltip({
-                    let package = package.clone();
-                    move |cx| Tooltip::text(format!("Indexing {package}…"), cx)
-                })
-                .into_any_element(),
-        );
-    }
+//     if store.is_indexing(&package) {
+//         children.push(
+//             div()
+//                 .id(("crates-being-indexed", row.0))
+//                 .child(Icon::new(IconName::ArrowCircle).with_animation(
+//                     "arrow-circle",
+//                     Animation::new(Duration::from_secs(4)).repeat(),
+//                     |icon, delta| icon.transform(Transformation::rotate(percentage(delta))),
+//                 ))
+//                 .tooltip({
+//                     let package = package.clone();
+//                     move |cx| Tooltip::text(format!("Indexing {package}…"), cx)
+//                 })
+//                 .into_any_element(),
+//         );
+//     }
 
-    if let Some(latest_error) = store.latest_error_for_package(&package) {
-        children.push(
-            div()
-                .id(("latest-error", row.0))
-                .child(
-                    Icon::new(IconName::Warning)
-                        .size(IconSize::Small)
-                        .color(Color::Warning),
-                )
-                .tooltip(move |cx| Tooltip::text(format!("Failed to index: {latest_error}"), cx))
-                .into_any_element(),
-        )
-    }
+//     if let Some(latest_error) = store.latest_error_for_package(&package) {
+//         children.push(
+//             div()
+//                 .id(("latest-error", row.0))
+//                 .child(
+//                     Icon::new(IconName::Warning)
+//                         .size(IconSize::Small)
+//                         .color(Color::Warning),
+//                 )
+//                 .tooltip(move |cx| Tooltip::text(format!("Failed to index: {latest_error}"), cx))
+//                 .into_any_element(),
+//         )
+//     }
 
-    let is_indexing = store.is_indexing(&package);
-    let latest_error = store.latest_error_for_package(&package);
+//     let is_indexing = store.is_indexing(&package);
+//     let latest_error = store.latest_error_for_package(&package);
 
-    if !is_indexing && latest_error.is_none() {
-        return Empty.into_any();
-    }
+//     if !is_indexing && latest_error.is_none() {
+//         return Empty.into_any();
+//     }
 
-    h_flex().gap_2().children(children).into_any_element()
-}
+//     h_flex().gap_2().children(children).into_any_element()
+// }
 
 fn make_lsp_adapter_delegate(
     project: &Model<Project>,

@@ -58,7 +58,7 @@ pub struct ArgumentCompletion {
     pub replace_previous_arguments: bool,
 }
 
-pub type SlashCommandResult = BoxStream<'static, Result<SlashCommandEvent>>;
+pub type SlashCommandResult = Result<BoxStream<'static, SlashCommandEvent>>;
 
 pub trait SlashCommand: 'static + Send + Sync {
     fn name(&self) -> String;
