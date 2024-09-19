@@ -2,7 +2,7 @@ use std::sync::{atomic::AtomicBool, Arc};
 
 use anyhow::{anyhow, Result};
 use assistant_slash_command::{
-    ArgumentCompletion, SlashCommand, SlashCommandOutput, SlashCommandOutputSection,
+    as_stream_vec, ArgumentCompletion, SlashCommand, SlashCommandOutputSection, SlashCommandResult,
 };
 use futures::FutureExt;
 use gpui::{Task, WeakView, WindowContext};
@@ -87,7 +87,7 @@ impl SlashCommand for ExtensionSlashCommand {
         _workspace: WeakView<Workspace>,
         delegate: Option<Arc<dyn LspAdapterDelegate>>,
         cx: &mut WindowContext,
-    ) -> Task<Result<SlashCommandOutput>> {
+    ) -> Task<SlashCommandResult> {
         let arguments = arguments.to_owned();
         let output = cx.background_executor().spawn(async move {
             self.extension
@@ -114,20 +114,50 @@ impl SlashCommand for ExtensionSlashCommand {
         });
         cx.foreground_executor().spawn(async move {
             let output = output.await?;
-            Ok(SlashCommandOutput {
-                text: output.text,
-                sections: output
-                    .sections
-                    .into_iter()
-                    .map(|section| SlashCommandOutputSection {
-                        range: section.range.into(),
-                        icon: IconName::Code,
-                        label: section.label.into(),
-                        metadata: None,
-                    })
-                    .collect(),
-                run_commands_in_text: false,
-            })
+
+            // Ok(SlashCommandOutput {
+            //     text: output.text,
+            //     sections: output
+            //         .sections
+            //         .into_iter()
+            //         .map(|section| SlashCommandOutputSection {
+            //             range: section.range.into(),
+            //             icon: IconName::Code,
+            //             label: section.label.into(),
+            //             metadata: None,
+            //         })
+            //         .collect(),
+            //     run_commands_in_text: false,
+            // })
+            use assistant_slash_command::{Role, SlashCommandEvent};
+            use futures::stream;
+
+            let events = vec![
+                SlashCommandEvent::StartMessage {
+                    role: Role::Assistant,
+                    run_commands_in_text: false,
+                },
+                SlashCommandEvent::Content {
+                    text: "Here is some fake output from the extension slash command:".to_string(),
+                },
+                SlashCommandEvent::StartSection {
+                    icon: IconName::Code,
+                    label: "Code Output".into(),
+                    metadata: None,
+                },
+                SlashCommandEvent::Content {
+                    text: "let x = 42;\nprintln!(\"The answer is {}\", x);".to_string(),
+                },
+                SlashCommandEvent::EndSection { metadata: None },
+                SlashCommandEvent::Content {
+                    text: "\nThis concludes the fake output.".to_string(),
+                },
+                SlashCommandEvent::EndMessage,
+            ];
+
+            // let stream = stream::iter(events);
+            // Ok(Box::pin(stream)) as Pin<Box<dyn Stream<Item = Result<SlashCommandEvent>> + Send>>
+            return Ok(as_stream_vec(events));
         })
     }
 }

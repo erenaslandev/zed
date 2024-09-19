@@ -1,13 +1,14 @@
 use anyhow::{anyhow, Result};
 use assistant_slash_command::{
-    AfterCompletion, ArgumentCompletion, SlashCommand, SlashCommandOutputSection,
-    SlashCommandResult,
+    as_stream_vec, AfterCompletion, ArgumentCompletion, Role, SlashCommand, SlashCommandEvent,
+    SlashCommandOutputSection, SlashCommandResult,
 };
 use collections::HashMap;
 use context_servers::{
     manager::{ContextServer, ContextServerManager},
     protocol::PromptInfo,
 };
+use futures::stream;
 use gpui::{Task, WeakView, WindowContext};
 use language::{BufferSnapshot, CodeLabel, LspAdapterDelegate};
 use std::sync::atomic::AtomicBool;
@@ -134,23 +135,25 @@ impl SlashCommand for ContextServerSlashCommand {
                 LineEnding::normalize(&mut prompt);
 
                 let events = vec![
-                    Ok(SlashCommandEvent::StartMessage {
+                    SlashCommandEvent::StartMessage {
                         role: Role::Assistant,
-                    }),
-                    Ok(SlashCommandEvent::Content {
+                        run_commands_in_text: false,
+                    },
+                    SlashCommandEvent::Content {
                         text: "Hello, world!".to_string(),
-                    }),
-                    Ok(SlashCommandEvent::EndMessage),
-                    Ok(SlashCommandEvent::StartMessage { role: Role::User }),
-                    Ok(SlashCommandEvent::Content {
+                    },
+                    SlashCommandEvent::EndMessage,
+                    SlashCommandEvent::StartMessage {
+                        role: Role::User,
+                        run_commands_in_text: false,
+                    },
+                    SlashCommandEvent::Content {
                         text: "Hello, world!".to_string(),
-                    }),
-                    Ok(SlashCommandEvent::EndMessage),
+                    },
+                    SlashCommandEvent::EndMessage,
                 ];
 
-                // Convert the vector into a stream
-                let stream = stream::iter(events);
-                Ok(stream)
+                Ok(as_stream_vec(events))
 
                 // Ok(SlashCommandOutput {
                 //     sections: vec![SlashCommandOutputSection {

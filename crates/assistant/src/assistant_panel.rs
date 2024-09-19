@@ -3183,32 +3183,32 @@ impl ContextEditor {
             }
         };
 
-        cx.spawn(|_, mut cx| async move {
-            let (paths, dragged_file_worktrees) = paths.await;
-            let cmd_name = file_command::FileSlashCommand.name();
+        // cx.spawn(|_, mut cx| async move {
+        //     let (paths, dragged_file_worktrees) = paths.await;
+        //     let cmd_name = file_command::FileSlashCommand.name();
 
-            context_editor_view
-                .update(&mut cx, |context_editor, cx| {
-                    let file_argument = paths
-                        .into_iter()
-                        .map(|path| path.to_string_lossy().to_string())
-                        .collect::<Vec<_>>()
-                        .join(" ");
+        //     context_editor_view
+        //         .update(&mut cx, |context_editor, cx| {
+        //             let file_argument = paths
+        //                 .into_iter()
+        //                 .map(|path| path.to_string_lossy().to_string())
+        //                 .collect::<Vec<_>>()
+        //                 .join(" ");
 
-                    context_editor.editor.update(cx, |editor, cx| {
-                        editor.insert("\n", cx);
-                        editor.insert(&format!("/{} {}", cmd_name, file_argument), cx);
-                    });
+        //             context_editor.editor.update(cx, |editor, cx| {
+        //                 editor.insert("\n", cx);
+        //                 editor.insert(&format!("/{} {}", cmd_name, file_argument), cx);
+        //             });
 
-                    context_editor.confirm_command(&ConfirmCommand, cx);
+        //             context_editor.confirm_command(&ConfirmCommand, cx);
 
-                    context_editor
-                        .dragged_file_worktrees
-                        .extend(dragged_file_worktrees);
-                })
-                .log_err();
-        })
-        .detach();
+        //             context_editor
+        //                 .dragged_file_worktrees
+        //                 .extend(dragged_file_worktrees);
+        //         })
+        //         .log_err();
+        // })
+        // .detach();
     }
 
     fn quote_selection(
@@ -3295,6 +3295,7 @@ impl ContextEditor {
                     // } else {
                     //     format!("{fence}{selected_text}\n```")
                     // }
+                    format!("{}", selected_text)
                 };
                 let crease_title = if let Some(path) = filename {
                     let start_line = selection.start.row + 1;

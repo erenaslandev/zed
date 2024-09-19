@@ -1,10 +1,10 @@
 mod slash_command_registry;
 
 use anyhow::Result;
-use futures::stream::BoxStream;
+use futures::stream::{BoxStream, StreamExt};
 use gpui::{AnyElement, AppContext, ElementId, SharedString, Task, WeakView, WindowContext};
 use language::{BufferSnapshot, CodeLabel, LspAdapterDelegate, OffsetRangeExt};
-use language_model::Role;
+pub use language_model::Role;
 use serde::{Deserialize, Serialize};
 pub use slash_command_registry::*;
 use std::{
@@ -103,6 +103,7 @@ pub type RenderFoldPlaceholder = Arc<
 pub enum SlashCommandEvent {
     StartMessage {
         role: Role,
+        run_commands_in_text: bool,
     },
     StartSection {
         icon: IconName,
@@ -120,6 +121,14 @@ pub enum SlashCommandEvent {
     EndSection {
         metadata: Option<serde_json::Value>,
     },
+}
+
+pub fn as_stream(event: SlashCommandEvent) -> BoxStream<'static, SlashCommandEvent> {
+    futures::stream::once(async { event }).boxed()
+}
+
+pub fn as_stream_vec(events: Vec<SlashCommandEvent>) -> BoxStream<'static, SlashCommandEvent> {
+    futures::stream::iter(events.into_iter()).boxed()
 }
 
 #[derive(Debug, Default, PartialEq)]
