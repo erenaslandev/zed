@@ -1,6 +1,7 @@
-use super::{diagnostics_command::collect_buffer_diagnostics, SlashCommand, SlashCommandOutput};
+use super::{SlashCommand, SlashCommandOutput, SlashCommandOutputSection, SlashCommandResult};
+// use super::diagnostics_command::collect_buffer_diagnostics;
 use anyhow::{anyhow, Context as _, Result};
-use assistant_slash_command::{AfterCompletion, ArgumentCompletion, SlashCommandOutputSection};
+use assistant_slash_command::{AfterCompletion, ArgumentCompletion};
 use fuzzy::PathMatch;
 use gpui::{AppContext, Model, Task, View, WeakView};
 use language::{BufferSnapshot, CodeLabel, HighlightId, LineEnding, LspAdapterDelegate};
@@ -181,7 +182,7 @@ impl SlashCommand for FileSlashCommand {
         workspace: WeakView<Workspace>,
         _delegate: Option<Arc<dyn LspAdapterDelegate>>,
         cx: &mut WindowContext,
-    ) -> Task<Result<SlashCommandOutput>> {
+    ) -> Task<SlashCommandResult> {
         let Some(workspace) = workspace.upgrade() else {
             return Task::ready(Err(anyhow!("workspace was dropped")));
         };
@@ -198,7 +199,7 @@ fn collect_files(
     project: Model<Project>,
     glob_inputs: &[String],
     cx: &mut AppContext,
-) -> Task<Result<SlashCommandOutput>> {
+) -> Task<SlashCommandResult> {
     let Ok(matchers) = glob_inputs
         .into_iter()
         .map(|glob_input| {
@@ -338,7 +339,7 @@ fn collect_files(
                 }
             }
         }
-        Ok(output)
+        Ok(output.into())
     })
 }
 
@@ -510,7 +511,7 @@ pub fn append_buffer_to_output(
     output.text.push('\n');
 
     let section_ix = output.sections.len();
-    collect_buffer_diagnostics(output, buffer, false);
+    // collect_buffer_diagnostics(output, buffer, false);
 
     output.sections.insert(
         section_ix,

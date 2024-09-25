@@ -1,7 +1,10 @@
 use crate::assistant_panel::ContextEditor;
 use anyhow::Result;
 use assistant_slash_command::AfterCompletion;
-pub use assistant_slash_command::{SlashCommand, SlashCommandRegistry};
+pub use assistant_slash_command::{
+    SlashCommand, SlashCommandEvent, SlashCommandOutput, SlashCommandOutputSection,
+    SlashCommandRegistry, SlashCommandResult,
+};
 use editor::{CompletionProvider, Editor};
 use fuzzy::{match_strings, StringMatchCandidate};
 use gpui::{AppContext, Model, Task, ViewContext, WeakView, WindowContext};
@@ -26,7 +29,7 @@ pub mod context_server_command;
 // pub mod diagnostics_command;
 // pub mod docs_command;
 // pub mod fetch_command;
-// pub mod file_command;
+pub mod file_command;
 // pub mod now_command;
 // pub mod project_command;
 // pub mod prompt_command;
