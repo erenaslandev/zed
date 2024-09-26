@@ -1800,7 +1800,7 @@ impl Context {
                 };
 
                 struct PendingSection {
-                    start: usize,
+                    anchor: language::Anchor,
                     icon: IconName,
                     label: SharedString,
                     metadata: Option<serde_json::Value>,
@@ -1811,6 +1811,7 @@ impl Context {
                     insert_offset: usize,
                 }
 
+                let mut position = 0;
                 let mut pending_section: Option<PendingSection> = None;
                 let mut pending_message: Option<PendingMessage> = None;
 
@@ -1821,6 +1822,7 @@ impl Context {
                             run_commands_in_text,
                         } => {
                             this.update(&mut cx, |this, cx| {
+                                // Question for antonio: can we insert the message after the last message or d owe need to create a new message manually so we can anchor it at the end of the command range?
                                 let last_message_id = this.get_last_valid_message_id(cx)?;
                                 let message_anchor = this.insert_message_after(
                                     last_message_id,
@@ -1840,18 +1842,18 @@ impl Context {
                             label,
                             metadata,
                         } => {
-                            // if pending_section.is_none() {
-                            //     this.update(&mut cx, |this, cx| {
-                            //         pending_section = this.buffer.update(cx, |buffer, cx| {
-                            //             Some(PendingSection {
-                            //                 start: current_logical_insert_point,
-                            //                 icon,
-                            //                 label,
-                            //                 metadata,
-                            //             })
-                            //         });
-                            //     });
-                            // }
+                            if pending_section.is_none() {
+                                this.update(&mut cx, |this, cx| {
+                                    pending_section = this.buffer.update(cx, |buffer, cx| {
+                                        Some(PendingSection {
+                                            anchor: buffer.anchor_after(position),
+                                            icon,
+                                            label,
+                                            metadata,
+                                        })
+                                    });
+                                });
+                            }
                         }
                         SlashCommandEvent::Content { text } => {
                             if let Some(ref mut current_message) = pending_message {
@@ -1860,8 +1862,7 @@ impl Context {
                                         let start = current_message.anchor.start.to_offset(buffer)
                                             + current_message.insert_offset;
                                         let text_len = text.len();
-                                        let end = start + text.len();
-                                        buffer.edit([(start..end, text)], None, cx);
+                                        buffer.edit([(start..start, text)], None, cx);
                                         PendingMessage {
                                             anchor: current_message.anchor.clone(),
                                             insert_offset: current_message.insert_offset + text_len,
@@ -1869,7 +1870,13 @@ impl Context {
                                     })
                                 }) {
                                     Ok(message) => {
+                                        position =
+                                            message.anchor.start.offset + message.insert_offset;
                                         *current_message = message;
+                                        log::info!(
+                                            "Inserted content into message. New position: {:?}",
+                                            position
+                                        )
                                     }
                                     Err(_) => {
                                         log::error!("Failed to insert content into message");
@@ -1886,28 +1893,34 @@ impl Context {
                             pending_message = None;
                         }
                         SlashCommandEvent::EndSection { metadata } => {
-                            // if let Some(pending_section) = pending_section {
-                            //     this.update(&mut cx, |this, cx| {
-                            //         this.buffer.update(cx, |buffer, cx| {
-                            //             let start = buffer.anchor_after(pending_section.start);
-                            //             let end = buffer.anchor_before(
-                            //                 pending_section.start + current_logical_insert_point,
-                            //             );
-                            //             let slash_command_output_section =
-                            //                 SlashCommandOutputSection {
-                            //                     range: start..end,
-                            //                     icon: pending_section.icon,
-                            //                     label: pending_section.label,
-                            //                     metadata: metadata.or(pending_section.metadata),
-                            //                 };
-                            //             this.slash_command_output_sections
-                            //                 .push(slash_command_output_section);
-                            //             this.slash_command_output_sections
-                            //                 .sort_by(|a, b| a.range.cmp(&b.range, buffer));
-                            //         });
-                            //     });
-                            // }
-                            // pending_section = None;
+                            if let Some(pending_section) = pending_section {
+                                this.update(&mut cx, |this, cx| {
+                                    this.buffer.update(cx, |buffer, cx| {
+                                        let start =
+                                            buffer.anchor_after(pending_section.anchor.offset);
+                                        let end = buffer.anchor_before(position);
+
+                                        log::info!(
+                                            "Slash command output section start: {:?}",
+                                            start
+                                        );
+                                        log::info!("Slash command output section end: {:?}", end);
+
+                                        let slash_command_output_section =
+                                            SlashCommandOutputSection {
+                                                range: start..end,
+                                                icon: pending_section.icon,
+                                                label: pending_section.label,
+                                                metadata: metadata.or(pending_section.metadata),
+                                            };
+                                        this.slash_command_output_sections
+                                            .push(slash_command_output_section);
+                                        this.slash_command_output_sections
+                                            .sort_by(|a, b| a.range.cmp(&b.range, buffer));
+                                    });
+                                });
+                            }
+                            pending_section = None;
                         }
                     }
                 }
