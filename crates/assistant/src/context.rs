@@ -1,3 +1,32 @@
+// todo!()
+// - Remove Into<BoxStream> for SlashCommandOutput
+// - When slash command wants to insert a message, but it wants to insert it after a message that has the same Role and it emits a `StartMessage { merge_same_roles: bool (name TBD) }`, we should ignore it
+// - When a section ends, we should run the following code:
+//         //             this.slash_command_output_sections
+//         //                 .extend(sections.iter().cloned());
+//         //             this.slash_command_output_sections
+//         //                 .sort_by(|a, b| a.range.cmp(&b.range, buffer));
+
+//         //             let output_range =
+//         //                 buffer.anchor_after(start)..buffer.anchor_before(new_end);
+//         //             this.finished_slash_commands.insert(command_id);
+
+//         //             (
+//         //                 ContextOperation::SlashCommandFinished {
+//         //                     id: command_id,
+//         //                     output_range: output_range.clone(),
+//         //                     sections: sections.clone(),
+//         //                     version,
+//         //                 },
+//         //                 ContextEvent::SlashCommandFinished {
+//         //                     output_range,
+//         //                     sections,
+//         //                     run_commands_in_output: output.run_commands_in_text,
+//         //                     expand_result,
+//         //                 },
+//         //             )
+// - Adapt all the commands to use the streaming API
+
 #[cfg(test)]
 mod context_tests;
 
