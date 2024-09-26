@@ -137,20 +137,16 @@ impl SlashCommand for ContextServerSlashCommand {
                 let events = vec![
                     SlashCommandEvent::StartMessage {
                         role: Role::Assistant,
-                        run_commands_in_text: false,
                     },
                     SlashCommandEvent::Content {
                         text: "Hello, world!".to_string(),
-                    },
-                    SlashCommandEvent::EndMessage,
-                    SlashCommandEvent::StartMessage {
-                        role: Role::User,
                         run_commands_in_text: false,
                     },
+                    SlashCommandEvent::StartMessage { role: Role::User },
                     SlashCommandEvent::Content {
                         text: "Hello, world!".to_string(),
+                        run_commands_in_text: false,
                     },
-                    SlashCommandEvent::EndMessage,
                 ];
 
                 Ok(as_stream_vec(events))

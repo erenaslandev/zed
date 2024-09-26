@@ -1104,15 +1104,13 @@ async fn test_random_context_collaboration(cx: &mut TestAppContext, mut rng: Std
                         ..context.buffer.read(cx).anchor_after(command_range.end);
                     context.insert_command_output(
                         command_range,
-                        Task::ready(
-                            SlashCommandOutput {
-                                role: Some(Role::User),
-                                text: output_text,
-                                sections,
-                                run_commands_in_text: false,
-                            }
-                            .into(),
-                        ),
+                        Task::ready(Ok(SlashCommandOutput {
+                            role: Some(Role::User),
+                            text: output_text,
+                            sections,
+                            run_commands_in_text: false,
+                        }
+                        .into())),
                         true,
                         false,
                         cx,

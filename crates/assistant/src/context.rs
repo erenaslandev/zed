@@ -1791,16 +1791,10 @@ impl Context {
         let insert_output_task = cx.spawn(|this, mut cx| {
             let command_range = command_range.clone();
             async move {
-                let mut stream = match output.await {
-                    Ok(result) => result,
-                    Err(err) => {
-                        log::error!("Error executing command: {:?}", err);
-                        return;
-                    }
-                };
+                let mut stream = output.await?;
 
                 struct PendingSection {
-                    anchor: language::Anchor,
+                    start: language::Anchor,
                     icon: IconName,
                     label: SharedString,
                     metadata: Option<serde_json::Value>,
@@ -1828,23 +1822,23 @@ impl Context {
                                     MessageStatus::Pending,
                                     cx,
                                 );
-                            });
+                            })?;
                         }
                         SlashCommandEvent::StartSection {
                             icon,
                             label,
                             metadata,
-                        } => this
-                            .read_with(&cx, |this, cx| {
+                        } => {
+                            this.read_with(&cx, |this, cx| {
                                 let buffer = this.buffer.read(cx);
                                 pending_section_stack.push(PendingSection {
-                                    anchor: buffer.anchor_after(position),
+                                    start: buffer.anchor_before(position),
                                     icon,
                                     label,
                                     metadata,
                                 })
-                            })
-                            .expect("failed to push pending section"),
+                            })?;
+                        }
                         SlashCommandEvent::Content {
                             text,
                             run_commands_in_text,
@@ -1855,7 +1849,7 @@ impl Context {
                                 this.buffer.update(cx, |buffer, cx| {
                                     buffer.edit([(position..position, text)], None, cx)
                                 })
-                            })?
+                            })?;
                         }
                         SlashCommandEvent::Progress { message, complete } => {
                             todo!()
@@ -1864,8 +1858,7 @@ impl Context {
                             if let Some(pending_section) = pending_section_stack.pop() {
                                 this.update(&mut cx, |this, cx| {
                                     this.buffer.update(cx, |buffer, cx| {
-                                        let start =
-                                            buffer.anchor_after(pending_section.anchor.offset);
+                                        let start = pending_section.start;
                                         let end = buffer.anchor_before(position);
 
                                         log::info!(
@@ -1887,7 +1880,7 @@ impl Context {
                                             .sort_by(|a, b| a.range.cmp(&b.range, buffer));
                                         // todo!("");
                                     });
-                                });
+                                })?;
                             }
                         }
                     }
@@ -1896,7 +1889,7 @@ impl Context {
                 this.update(&mut cx, |this, cx| {
                     let command_id = SlashCommandId(this.next_timestamp());
                     this.finished_slash_commands.insert(command_id);
-                });
+                })
             }
         });
         // this.update(&mut cx, |this, cx| match output {
@@ -1987,6 +1980,12 @@ impl Context {
         //     }
         // // })
         // .ok()
+
+        let insert_output_task = cx.background_executor().spawn(async move {
+            if let Err(error) = insert_output_task.await {
+                log::error!("failed to run command: {:?}", error)
+            }
+        });
 
         // We are inserting a pending command and update it.
         if let Some(pending_command) = self.pending_command_for_position(command_range.start, cx) {
