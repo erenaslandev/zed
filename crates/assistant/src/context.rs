@@ -1809,7 +1809,7 @@ impl Context {
                 let mut position = this.update(&mut cx, |this, cx| {
                     this.buffer.update(cx, |buffer, cx| {
                         let offset = command_range.end.to_offset(buffer);
-                        buffer.edit([(offset, "\n")], None, cx);
+                        buffer.edit([(offset..offset, "\n")], None, cx);
                         buffer.anchor_after(offset + 1)
                     })
                 })?;
@@ -1819,8 +1819,11 @@ impl Context {
                     match event {
                         SlashCommandEvent::StartMessage { role } => {
                             this.update(&mut cx, |this, cx| {
+                                let offset = this
+                                    .buffer
+                                    .read_with(cx, |buffer, cx| position.to_offset(buffer));
                                 this.insert_message_at_offset(
-                                    position,
+                                    offset,
                                     role,
                                     MessageStatus::Pending,
                                     cx,
@@ -1831,15 +1834,17 @@ impl Context {
                             icon,
                             label,
                             metadata,
-                        } => this.read_with(&cx, |this, cx| {
-                            let buffer = buffer.read(cx);
-                            pending_section_stack.push(PendingSection {
-                                anchor: buffer.anchor_after(position),
-                                icon,
-                                label,
-                                metadata,
-                            });
-                        }),
+                        } => this
+                            .read_with(&cx, |this, cx| {
+                                let buffer = this.buffer.read(cx);
+                                pending_section_stack.push(PendingSection {
+                                    anchor: buffer.anchor_after(position),
+                                    icon,
+                                    label,
+                                    metadata,
+                                })
+                            })
+                            .expect("failed to push pending section"),
                         SlashCommandEvent::Content {
                             text,
                             run_commands_in_text,
@@ -1856,7 +1861,7 @@ impl Context {
                             todo!()
                         }
                         SlashCommandEvent::EndSection { metadata } => {
-                            if let Some(pending_section) = pending_section.pop() {
+                            if let Some(pending_section) = pending_section_stack.pop() {
                                 this.update(&mut cx, |this, cx| {
                                     this.buffer.update(cx, |buffer, cx| {
                                         let start =
@@ -1887,8 +1892,7 @@ impl Context {
                         }
                     }
                 }
-                assert!(pending_section.is_none());
-                assert!(pending_message.is_none());
+                assert!(pending_section_stack.is_empty());
                 this.update(&mut cx, |this, cx| {
                     let command_id = SlashCommandId(this.next_timestamp());
                     this.finished_slash_commands.insert(command_id);

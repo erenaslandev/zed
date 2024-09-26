@@ -135,9 +135,9 @@ impl SlashCommand for ExtensionSlashCommand {
             let events = vec![
                 SlashCommandEvent::StartMessage {
                     role: Role::Assistant,
-                    run_commands_in_text: false,
                 },
                 SlashCommandEvent::Content {
+                    run_commands_in_text: false,
                     text: "Here is some fake output from the extension slash command:".to_string(),
                 },
                 SlashCommandEvent::StartSection {
@@ -146,13 +146,14 @@ impl SlashCommand for ExtensionSlashCommand {
                     metadata: None,
                 },
                 SlashCommandEvent::Content {
+                    run_commands_in_text: false,
                     text: "let x = 42;\nprintln!(\"The answer is {}\", x);".to_string(),
                 },
                 SlashCommandEvent::EndSection { metadata: None },
                 SlashCommandEvent::Content {
+                    run_commands_in_text: false,
                     text: "\nThis concludes the fake output.".to_string(),
                 },
-                SlashCommandEvent::EndMessage,
             ];
 
             // let stream = stream::iter(events);
