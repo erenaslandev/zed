@@ -26,6 +26,15 @@
 //         //                 },
 //         //             )
 // - Adapt all the commands to use the streaming API
+// - Animation example:
+// Icon::new(IconName::ArrowCircle)
+// .size(IconSize::Small)
+// .with_animation(
+// "arrow-circle",
+// Animation::new(Duration::from_secs(2)).repeat(),
+// |icon, delta| icon.transform(Transformation::rotate(percentage(delta))),
+// )
+// .into_any_element(),
 
 #[cfg(test)]
 mod context_tests;
