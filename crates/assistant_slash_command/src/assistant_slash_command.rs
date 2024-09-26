@@ -123,7 +123,6 @@ impl Into<BoxStream<'static, SlashCommandEvent>> for SlashCommandOutput {
         let mut events = Vec::new();
         events.push(SlashCommandEvent::StartMessage {
             role: self.role.unwrap_or(Role::User),
-            run_commands_in_text: self.run_commands_in_text,
         });
 
         for section in &self.sections {
@@ -134,13 +133,14 @@ impl Into<BoxStream<'static, SlashCommandEvent>> for SlashCommandOutput {
             });
         }
 
-        events.push(SlashCommandEvent::Content { text: self.text });
+        events.push(SlashCommandEvent::Content {
+            text: self.text,
+            run_commands_in_text: self.run_commands_in_text,
+        });
 
         for _ in self.sections {
             events.push(SlashCommandEvent::EndSection { metadata: None });
         }
-
-        events.push(SlashCommandEvent::EndMessage);
 
         futures::stream::iter(events).boxed()
     }
@@ -149,7 +149,6 @@ impl Into<BoxStream<'static, SlashCommandEvent>> for SlashCommandOutput {
 pub enum SlashCommandEvent {
     StartMessage {
         role: Role,
-        run_commands_in_text: bool,
     },
     StartSection {
         icon: IconName,
@@ -158,12 +157,12 @@ pub enum SlashCommandEvent {
     },
     Content {
         text: String,
+        run_commands_in_text: bool,
     },
     Progress {
         message: String,
         complete: f32,
     },
-    EndMessage,
     EndSection {
         metadata: Option<serde_json::Value>,
     },

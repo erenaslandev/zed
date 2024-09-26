@@ -1806,94 +1806,57 @@ impl Context {
                     metadata: Option<serde_json::Value>,
                 }
 
-                struct PendingMessage {
-                    anchor: MessageAnchor,
-                    insert_offset: usize,
-                }
-
-                let mut position = 0;
-                let mut pending_section: Option<PendingSection> = None;
-                let mut pending_message: Option<PendingMessage> = None;
+                let mut position = this.update(&mut cx, |this, cx| {
+                    this.buffer.update(cx, |buffer, cx| {
+                        let offset = command_range.end.to_offset(buffer);
+                        buffer.edit([(offset, "\n")], None, cx);
+                        buffer.anchor_after(offset + 1)
+                    })
+                })?;
+                let mut pending_section_stack: Vec<PendingSection> = Vec::new();
 
                 while let Some(event) = stream.next().await {
                     match event {
-                        SlashCommandEvent::StartMessage {
-                            role,
-                            run_commands_in_text,
-                        } => {
+                        SlashCommandEvent::StartMessage { role } => {
                             this.update(&mut cx, |this, cx| {
-                                // Question for antonio: can we insert the message after the last message or d owe need to create a new message manually so we can anchor it at the end of the command range?
-                                let last_message_id = this.get_last_valid_message_id(cx)?;
-                                let message_anchor = this.insert_message_after(
-                                    last_message_id,
+                                this.insert_message_at_offset(
+                                    position,
                                     role,
                                     MessageStatus::Pending,
                                     cx,
-                                )?;
-                                pending_message = Some(PendingMessage {
-                                    anchor: message_anchor,
-                                    insert_offset: 0,
-                                });
-                                Some(())
+                                );
                             });
                         }
                         SlashCommandEvent::StartSection {
                             icon,
                             label,
                             metadata,
+                        } => this.read_with(&cx, |this, cx| {
+                            let buffer = buffer.read(cx);
+                            pending_section_stack.push(PendingSection {
+                                anchor: buffer.anchor_after(position),
+                                icon,
+                                label,
+                                metadata,
+                            });
+                        }),
+                        SlashCommandEvent::Content {
+                            text,
+                            run_commands_in_text,
                         } => {
-                            if pending_section.is_none() {
-                                this.update(&mut cx, |this, cx| {
-                                    pending_section = this.buffer.update(cx, |buffer, cx| {
-                                        Some(PendingSection {
-                                            anchor: buffer.anchor_after(position),
-                                            icon,
-                                            label,
-                                            metadata,
-                                        })
-                                    });
-                                });
-                            }
-                        }
-                        SlashCommandEvent::Content { text } => {
-                            if let Some(ref mut current_message) = pending_message {
-                                match this.update(&mut cx, |this, cx| {
-                                    this.buffer.update(cx, |buffer, cx| {
-                                        let start = current_message.anchor.start.to_offset(buffer)
-                                            + current_message.insert_offset;
-                                        let text_len = text.len();
-                                        buffer.edit([(start..start, text)], None, cx);
-                                        PendingMessage {
-                                            anchor: current_message.anchor.clone(),
-                                            insert_offset: current_message.insert_offset + text_len,
-                                        }
-                                    })
-                                }) {
-                                    Ok(message) => {
-                                        position =
-                                            message.anchor.start.offset + message.insert_offset;
-                                        *current_message = message;
-                                        log::info!(
-                                            "Inserted content into message. New position: {:?}",
-                                            position
-                                        )
-                                    }
-                                    Err(_) => {
-                                        log::error!("Failed to insert content into message");
-                                        pending_message = None;
-                                        return;
-                                    }
-                                };
-                            }
+                            assert!(!run_commands_in_text, "not yet implemented");
+
+                            this.update(&mut cx, |this, cx| {
+                                this.buffer.update(cx, |buffer, cx| {
+                                    buffer.edit([(position..position, text)], None, cx)
+                                })
+                            })?
                         }
                         SlashCommandEvent::Progress { message, complete } => {
                             todo!()
                         }
-                        SlashCommandEvent::EndMessage => {
-                            pending_message = None;
-                        }
                         SlashCommandEvent::EndSection { metadata } => {
-                            if let Some(pending_section) = pending_section {
+                            if let Some(pending_section) = pending_section.pop() {
                                 this.update(&mut cx, |this, cx| {
                                     this.buffer.update(cx, |buffer, cx| {
                                         let start =
@@ -1917,10 +1880,10 @@ impl Context {
                                             .push(slash_command_output_section);
                                         this.slash_command_output_sections
                                             .sort_by(|a, b| a.range.cmp(&b.range, buffer));
+                                        // todo!("");
                                     });
                                 });
                             }
-                            pending_section = None;
                         }
                     }
                 }
@@ -2482,41 +2445,52 @@ impl Context {
                 next_message_ix += 1;
             }
 
-            let start = self.buffer.update(cx, |buffer, cx| {
-                let offset = self
-                    .message_anchors
-                    .get(next_message_ix)
-                    .map_or(buffer.len(), |message| {
-                        buffer.clip_offset(message.start.to_offset(buffer) - 1, Bias::Left)
-                    });
-                buffer.edit([(offset..offset, "\n")], None, cx);
-                buffer.anchor_before(offset + 1)
-            });
-
-            let version = self.version.clone();
-            let anchor = MessageAnchor {
-                id: MessageId(self.next_timestamp()),
-                start,
-            };
-            let metadata = MessageMetadata {
-                role,
-                status,
-                timestamp: anchor.id.0,
-                cache: None,
-            };
-            self.insert_message(anchor.clone(), metadata.clone(), cx);
-            self.push_op(
-                ContextOperation::InsertMessage {
-                    anchor: anchor.clone(),
-                    metadata,
-                    version,
-                },
-                cx,
-            );
-            Some(anchor)
+            let buffer = self.buffer.read(cx);
+            let offset = self
+                .message_anchors
+                .get(next_message_ix)
+                .map_or(buffer.len(), |message| {
+                    buffer.clip_offset(message.start.to_offset(buffer) - 1, Bias::Left)
+                });
+            Some(self.insert_message_at_offset(offset, role, status, cx))
         } else {
             None
         }
+    }
+
+    fn insert_message_at_offset(
+        &mut self,
+        offset: usize,
+        role: Role,
+        status: MessageStatus,
+        cx: &mut ModelContext<Self>,
+    ) -> MessageAnchor {
+        let start = self.buffer.update(cx, |buffer, cx| {
+            buffer.edit([(offset..offset, "\n")], None, cx);
+            buffer.anchor_before(offset + 1)
+        });
+
+        let version = self.version.clone();
+        let anchor = MessageAnchor {
+            id: MessageId(self.next_timestamp()),
+            start,
+        };
+        let metadata = MessageMetadata {
+            role,
+            status,
+            timestamp: anchor.id.0,
+            cache: None,
+        };
+        self.insert_message(anchor.clone(), metadata.clone(), cx);
+        self.push_op(
+            ContextOperation::InsertMessage {
+                anchor: anchor.clone(),
+                metadata,
+                version,
+            },
+            cx,
+        );
+        anchor
     }
 
     pub fn insert_content(&mut self, content: Content, cx: &mut ModelContext<Self>) {
