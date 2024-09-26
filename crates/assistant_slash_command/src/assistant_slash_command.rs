@@ -122,7 +122,7 @@ impl Into<BoxStream<'static, SlashCommandEvent>> for SlashCommandOutput {
     fn into(self) -> BoxStream<'static, SlashCommandEvent> {
         let mut events = Vec::new();
         events.push(SlashCommandEvent::StartMessage {
-            role: self.role.unwrap_or(Role::Assistant),
+            role: self.role.unwrap_or(Role::User),
             run_commands_in_text: self.run_commands_in_text,
         });
 

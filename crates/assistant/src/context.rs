@@ -1813,7 +1813,7 @@ impl Context {
 
                 let mut pending_section: Option<PendingSection> = None;
                 let mut pending_message: Option<PendingMessage> = None;
-                let mut current_logical_insert_point = 0;
+
                 while let Some(event) = stream.next().await {
                     match event {
                         SlashCommandEvent::StartMessage {
@@ -1830,7 +1830,7 @@ impl Context {
                                 )?;
                                 pending_message = Some(PendingMessage {
                                     anchor: message_anchor,
-                                    insert_offset: current_logical_insert_point,
+                                    insert_offset: 0,
                                 });
                                 Some(())
                             });
@@ -1840,34 +1840,28 @@ impl Context {
                             label,
                             metadata,
                         } => {
-                            if pending_section.is_none() {
-                                this.update(&mut cx, |this, cx| {
-                                    pending_section = this.buffer.update(cx, |buffer, cx| {
-                                        Some(PendingSection {
-                                            start: current_logical_insert_point,
-                                            icon,
-                                            label,
-                                            metadata,
-                                        })
-                                    });
-                                });
-                            }
+                            // if pending_section.is_none() {
+                            //     this.update(&mut cx, |this, cx| {
+                            //         pending_section = this.buffer.update(cx, |buffer, cx| {
+                            //             Some(PendingSection {
+                            //                 start: current_logical_insert_point,
+                            //                 icon,
+                            //                 label,
+                            //                 metadata,
+                            //             })
+                            //         });
+                            //     });
+                            // }
                         }
                         SlashCommandEvent::Content { text } => {
                             if let Some(ref mut current_message) = pending_message {
                                 match this.update(&mut cx, |this, cx| {
                                     this.buffer.update(cx, |buffer, cx| {
-                                        // let start = command_range.start.to_offset(buffer);
-                                        // let old_end = command_range.end.to_offset(buffer);
-                                        // We want to start editing the buffer at the end of thecurrent command_range,
-                                        // and not replace the command range for now. (we will do this again later), since
-                                        // we are still showing the command label.
-                                        let command_end = command_range.end.to_offset(buffer);
-                                        let start = command_end + current_message.insert_offset;
+                                        let start = current_message.anchor.start.to_offset(buffer)
+                                            + current_message.insert_offset;
                                         let text_len = text.len();
                                         let end = start + text.len();
                                         buffer.edit([(start..end, text)], None, cx);
-                                        current_logical_insert_point += text_len;
                                         PendingMessage {
                                             anchor: current_message.anchor.clone(),
                                             insert_offset: current_message.insert_offset + text_len,
@@ -1892,28 +1886,28 @@ impl Context {
                             pending_message = None;
                         }
                         SlashCommandEvent::EndSection { metadata } => {
-                            if let Some(pending_section) = pending_section {
-                                this.update(&mut cx, |this, cx| {
-                                    this.buffer.update(cx, |buffer, cx| {
-                                        let start = buffer.anchor_after(pending_section.start);
-                                        let end = buffer.anchor_before(
-                                            pending_section.start + current_logical_insert_point,
-                                        );
-                                        let slash_command_output_section =
-                                            SlashCommandOutputSection {
-                                                range: start..end,
-                                                icon: pending_section.icon,
-                                                label: pending_section.label,
-                                                metadata: metadata.or(pending_section.metadata),
-                                            };
-                                        this.slash_command_output_sections
-                                            .push(slash_command_output_section);
-                                        this.slash_command_output_sections
-                                            .sort_by(|a, b| a.range.cmp(&b.range, buffer));
-                                    });
-                                });
-                            }
-                            pending_section = None;
+                            // if let Some(pending_section) = pending_section {
+                            //     this.update(&mut cx, |this, cx| {
+                            //         this.buffer.update(cx, |buffer, cx| {
+                            //             let start = buffer.anchor_after(pending_section.start);
+                            //             let end = buffer.anchor_before(
+                            //                 pending_section.start + current_logical_insert_point,
+                            //             );
+                            //             let slash_command_output_section =
+                            //                 SlashCommandOutputSection {
+                            //                     range: start..end,
+                            //                     icon: pending_section.icon,
+                            //                     label: pending_section.label,
+                            //                     metadata: metadata.or(pending_section.metadata),
+                            //                 };
+                            //             this.slash_command_output_sections
+                            //                 .push(slash_command_output_section);
+                            //             this.slash_command_output_sections
+                            //                 .sort_by(|a, b| a.range.cmp(&b.range, buffer));
+                            //         });
+                            //     });
+                            // }
+                            // pending_section = None;
                         }
                     }
                 }
