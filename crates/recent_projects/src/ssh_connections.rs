@@ -390,40 +390,50 @@ impl SshClientDelegate {
 
         // In dev mode, build the remote server binary from source
         #[cfg(debug_assertions)]
-        if release_channel == ReleaseChannel::Dev
-            && platform.arch == std::env::consts::ARCH
-            && platform.os == std::env::consts::OS
         {
-            use smol::process::{Command, Stdio};
+            if let Some(rustc_target) = platform.rustc_target() {
+                use smol::process::{Command, Stdio};
 
-            self.update_status(Some("building remote server binary from source"), cx);
-            log::info!("building remote server binary from source");
-            run_cmd(Command::new("cargo").args([
-                "build",
-                "--package",
-                "remote_server",
-                "--target-dir",
-                "target/remote_server",
-            ]))
-            .await?;
-            // run_cmd(Command::new("strip").args(["target/remote_server/debug/remote_server"]))
-            // .await?;
-            run_cmd(Command::new("gzip").args([
-                "-9",
-                "-f",
-                "target/remote_server/debug/remote_server",
-            ]))
-            .await?;
+                log::info!("building remote server binary from source, target: {rustc_target}");
+                run_cmd(Command::new("cargo").args([
+                    "build",
+                    "--package",
+                    "remote_server",
+                    "--target",
+                    &rustc_target,
+                    "--target-dir",
+                    &format!("target/remote_server"),
+                ]))
+                .await?;
+                run_cmd(Command::new("gzip").args([
+                    "-9",
+                    "-f",
+                    &format!("target/remote_server/{rustc_target}/debug/remote_server"),
+                ]))
+                .await?;
 
-            let path = std::env::current_dir()?.join("target/remote_server/debug/remote_server.gz");
-            return Ok((path, version));
+                let path = std::env::current_dir()?.join(&format!(
+                    "target/remote_server/{rustc_target}/debug/remote_server.gz"
+                ));
+                log::info!("Build successful");
+                return Ok((path, version));
 
-            async fn run_cmd(command: &mut Command) -> Result<()> {
-                let output = command.stderr(Stdio::inherit()).output().await?;
-                if !output.status.success() {
-                    Err(anyhow::anyhow!("failed to run command: {:?}", command))?;
+                async fn run_cmd(command: &mut Command) -> Result<()> {
+                    let output = command.stderr(Stdio::inherit()).output().await?;
+                    if !output.status.success() {
+                        log::error!(
+                            "Command {command:?} invocation failed. Stdout: '{}', stderr: '{}'",
+                            String::from_utf8_lossy(&output.stdout),
+                            String::from_utf8_lossy(&output.stderr),
+                        );
+                        Err(anyhow::anyhow!("failed to run command: {command:?}"))?;
+                    }
+                    Ok(())
                 }
-                Ok(())
+            } else {
+                log::warn!(
+                    "No known rustc target for {platform:?}, skipping the headless server build"
+                );
             }
         }
 
@@ -436,6 +446,12 @@ impl SshClientDelegate {
         )
         .await
         .map_err(|e| {
+            log::error!(
+                "failed to download remote server binary (os: {}, arch: {}): {:#}",
+                platform.os,
+                platform.arch,
+                e
+            );
             anyhow::anyhow!(
                 "failed to download remote server binary (os: {}, arch: {}): {}",
                 platform.os,

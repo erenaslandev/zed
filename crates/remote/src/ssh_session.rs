@@ -117,6 +117,25 @@ pub struct SshPlatform {
     pub arch: &'static str,
 }
 
+impl SshPlatform {
+    #[cfg(debug_assertions)]
+    pub fn rustc_target(&self) -> Option<std::borrow::Cow<'static, str>> {
+        use std::borrow::Cow;
+
+        if let Some(target) = std::env::var_os("ZED_SSH_SERVER_RUSTC_TARGET") {
+            return Some(Cow::Owned(target.to_string_lossy().to_string()));
+        }
+        Some(Cow::Borrowed(match (self.os, self.arch) {
+            ("macos", "x86_64") => "x86_64-apple-darwin",
+            ("macos", "aarch64") => "aarch64-apple-darwin",
+            ("linux", "x86_64") => "x86_64-unknown-linux-gnu",
+            ("linux", "aarch64") => "aarch64-unknown-linux-gnu",
+            ("windows", "x86_64") => "x86_64-pc-windows-msvc",
+            _ => return None,
+        }))
+    }
+}
+
 pub trait SshClientDelegate: Send + Sync {
     fn ask_password(
         &self,
@@ -168,7 +187,8 @@ async fn run_cmd(command: &mut process::Command) -> Result<String> {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
         Err(anyhow!(
-            "failed to run command: {}",
+            "failed to run command {command:?}. Stdout: '{}', stderr: '{}'",
+            String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         ))
     }
@@ -1223,7 +1243,7 @@ impl SshRemoteConnection {
         };
         let arch = if arch.starts_with("arm") || arch.starts_with("aarch64") {
             "aarch64"
-        } else if arch.starts_with("x86") || arch.starts_with("i686") {
+        } else if arch.starts_with("x86") || arch.starts_with("i686") || arch.starts_with("amd64") {
             "x86_64"
         } else {
             Err(anyhow!("unknown uname architecture {arch:?}"))?
